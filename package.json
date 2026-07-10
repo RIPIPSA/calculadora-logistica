@@ -1,0 +1,15 @@
+{
+  "name": "ripipsa-app",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Raíz del proyecto: levanta server/ (Express + SQLite) y frontend/ (Vite + React) juntos.",
+  "scripts": {
+    "install:all": "npm install --prefix server && npm install --prefix frontend",
+    "dev": "concurrently -n SERVER,FRONTEND -c blue,green \"npm start --prefix server\" \"npm run dev --prefix frontend\"",
+    "server": "npm start --prefix server",
+    "frontend": "npm run dev --prefix frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
