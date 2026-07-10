@@ -1,0 +1,8 @@
+node_modules
+.env
+
+# La base de datos y sus respaldos son datos, no código: no van al repo.
+data/*.db
+data/*.db-*
+data/backups/
+data/eventos-restauracion.log

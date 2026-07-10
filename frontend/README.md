@@ -7,7 +7,7 @@ App Vite + React que reemplaza el flujo de la hoja `GUIALOG` del Excel
 
 ```bash
 npm install
-cp .env   # llena VITE_EPICOR_BASE_URL, etc. con el ambiente real
+cp .env
 npm run dev
 ```
 
@@ -25,6 +25,14 @@ npm run dev
    La UI deshabilita el combo y avisa que falta cargar el catálogo, en vez de
    dejarlo abierto a texto libre.
 4. Se ignoraron los nombres definidos rotos (`#REF!`) del libro original.
+5. **Sucursal y Destino son campos independientes** (corregido tras
+   revisión): en una versión anterior se habían fusionado por error,
+   asumiendo que ambos representaban lo mismo. Revisando las fórmulas
+   exactas del Excel se confirmó que **no** es así: `Destino` únicamente
+   filtra qué Aduanas se pueden elegir (`INDIRECT($J$35)`), mientras que
+   `Sucursal` es la que realmente recibe la mercancía y se usa para calcular
+   la ruta de Flete de Importación (`Aduana -> Sucursal`, fórmula `S85`).
+   Ambos campos ya están separados en la UI y en el motor de cálculo.
 
 ## Estructura
 
@@ -43,9 +51,16 @@ src/
 
 ## Login / Epicor
 
-El login llama a `src/services/epicorAuth.js`, que hace un `POST` a
-`VITE_EPICOR_BASE_URL + VITE_EPICOR_AUTH_PATH` con `{ userId, password, company }`
-y espera un token en la respuesta.
+El login llama a `src/services/epicorAuth.js`, que hace un `GET` al
+`TokenResource.svc` de la instancia Epicor SaaS (`VITE_EPICOR_TOKEN_URL`),
+autenticado con:
+
+- Encabezado `Authorization: Basic <base64(usuario:contraseña)>`
+- Encabezado `X-API-Key: VITE_EPICOR_API_KEY`
+
+y espera un token en la propiedad `Token` de la respuesta (con fallback a
+`AccessToken`/`token` por si la versión de Epicor lo nombra distinto — si tu
+ambiente usa otro nombre, ese es el único punto a ajustar en el archivo).
 
 ## Pendientes / a validar con el negocio
 
@@ -56,4 +71,3 @@ y espera un token en la respuesta.
   Epicor.
 - Validar con el equipo de comercio exterior que las fórmulas de Honorarios
   A.A. e Impuestos (Sección V) sigan vigentes tal como están en el Excel.
-- Definir formato de PDF a decargar una vez finalizada la cotización
