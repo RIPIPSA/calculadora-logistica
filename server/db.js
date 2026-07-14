@@ -237,21 +237,38 @@ if (esNueva) {
 
   const productosPorProveedor = {
     Dorner: [
-      'Transportador de banda con accesorios', 'Partes para transportador',
-      'Mesa de elevación con sus accesorios', 'Cargador de baterías 48v 12a',
-      'Brazo robotico para uso industrial con accesorios para su instalacion y funcionamiento',
-      'Transportador de cadena plástica',
+      'Transportador de banda con accesorios',
+      'Banda de plastico con refuerzo textil',
+      'Motorreductor',
+      'Partes para transportador',
     ],
     Hytrol: [
-      'Banda de plastico con refuerzo textil', 'Transportador de banda con accesorios',
-      'Carretilla manual con sistema de elevacion',
-      'Juego de baterías recargables de litio con sus accesorios para instalación',
-      'Partes para robot industrial', 'Perfil de aluminio',
+      'Partes para transportador',
+      'Transportador de banda con accesorios',
+      'Transportador de gravedad con accesorios',
+      'Transportador de rodillos con accesorios',
+      'Rodillo para transportador',
+      'Banda transportadora de plástico',
     ],
-    Southworth: ['Motorreductor', 'Transportador de gravedad con accesorios', 'Robot industrial para manipulación de mercancia con sus accesorios'],
-    MiR: ['Partes para transportador', 'Transportador de rodillos con accesorios', 'Partes para robot industrial'],
-    UR: ['Rodillo para transportador', 'Circuitos Modulares'],
-    Intechmotion: ['Banda transportadora de plástico'],
+    Southworth: [
+      'Mesa de elevación con sus accesorios',
+      'Carretilla manual con sistema de elevacion',
+    ],
+    MiR: [
+      'Cargador de baterías 48v 12a',
+      'Juego de baterías recargables de litio con sus accesorios para instalación',
+      'Robot industrial para manipulación de mercancia con sus accesorios',
+      'Partes para robot industrial',
+      'Circuitos Modulares',
+    ],
+    UR: [
+      'Brazo robotico para uso industrial con accesorios para su instalacion y funcionamiento',
+      'Partes para robot industrial',
+    ],
+    Intechmotion: [
+      'Transportador de cadena plástica',
+      'Perfil de aluminio',
+    ],
     Qimarox: [], OnRobot: [], Robotiq: [], Dellner: [], Italvibras: [],
   };
   const insertProveedor = db.prepare('INSERT INTO proveedores (nombre) VALUES (?)');
