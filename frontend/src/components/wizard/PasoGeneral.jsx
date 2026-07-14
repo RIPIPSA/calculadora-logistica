@@ -19,7 +19,7 @@ export function PasoGeneral() {
           value={state.sucursal}
           onChange={(e) => setField('sucursal', e.target.value)}
         >
-          {catalogos.SUCURSALES.map((s) => (
+          {catalogos.sucursales.map((s) => (
             <option key={s} value={s}>
               {s}
             </option>
@@ -33,7 +33,7 @@ export function PasoGeneral() {
           value={state.proveedor}
           onChange={(e) => setField('proveedor', e.target.value)}
         >
-          {catalogos.PROVEEDORES.map((p) => (
+          {catalogos.proveedores.map((p) => (
             <option key={p} value={p}>
               {p}
             </option>
@@ -47,7 +47,7 @@ export function PasoGeneral() {
           value={state.destino}
           onChange={(e) => setField('destino', e.target.value)}
         >
-          {catalogos.SUCURSALES.map((s) => (
+          {catalogos.sucursales.map((s) => (
             <option key={s} value={s}>
               {s}
             </option>

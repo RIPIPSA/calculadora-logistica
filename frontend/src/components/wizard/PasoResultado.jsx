@@ -1,16 +1,31 @@
 import { useWizard } from './WizardContext.jsx';
 import { Button } from '../ui/ui.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { generarPdfResultado } from '../../services/pdfReporte.js';
 
 const formatoUSD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
 export function PasoResultado() {
   const { state, resultado, reset } = useWizard();
+  const { usuario } = useAuth();
 
   if (!resultado) {
     return <p>Faltan datos por capturar en los pasos anteriores.</p>;
   }
 
   const { resumen, huboPD, agencia, tasaIgi } = resultado;
+
+  const handleDescargarPdf = async () => {
+    try {
+      await generarPdfResultado({
+        generadoPor: usuario?.nombreCompleto ?? usuario?.nombre ?? 'Desconocido',
+        state,
+        resultado,
+      });
+    } catch (err) {
+      alert(`No se pudo generar el PDF: ${err.message}`);
+    }
+  };
 
   return (
     <div>
@@ -74,9 +89,12 @@ export function PasoResultado() {
         </li>
       </ul>
 
-      <Button variant="outlined" onClick={reset}>
-        Calcular otro embarque
-      </Button>
+      <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+        <Button onClick={handleDescargarPdf}>Descargar PDF</Button>
+        <Button variant="outlined" onClick={reset}>
+          Calcular otro embarque
+        </Button>
+      </div>
     </div>
   );
 }

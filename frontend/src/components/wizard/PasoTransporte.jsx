@@ -1,13 +1,12 @@
 import { useWizard } from './WizardContext.jsx';
 import { Field, Select, TextField, Button } from '../ui/ui.jsx';
-import { OPCIONES_ESPECIALES_PESO } from '../../data/rangoPeso.js';
 import { calcularTipoEmbarque } from '../../engine/calculoLogistico.js';
 
 export function PasoTransporte() {
-  const { state, setField, pesoLbs } = useWizard();
+  const { state, setField, pesoLbs, catalogos } = useWizard();
   const tipoEmbarque =
     (state.tipoPeso === 'especial' ? state.pesoEspecial : state.pesoNumero) && state.cantidadBultos
-      ? calcularTipoEmbarque(pesoLbs, state.cantidadBultos)
+      ? calcularTipoEmbarque(pesoLbs, state.cantidadBultos, catalogos.opcionesEspecialesPeso)
       : null;
 
   return (
@@ -52,7 +51,7 @@ export function PasoTransporte() {
             value={state.pesoEspecial}
             onChange={(e) => setField('pesoEspecial', e.target.value)}
           >
-            {OPCIONES_ESPECIALES_PESO.map((o) => (
+            {catalogos.opcionesEspecialesPeso.map((o) => (
               <option key={o} value={o}>
                 {o}
               </option>

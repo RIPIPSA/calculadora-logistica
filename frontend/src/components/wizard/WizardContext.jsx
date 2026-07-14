@@ -1,8 +1,5 @@
 import { createContext, useContext, useMemo, useReducer } from 'react';
-import { SUCURSALES, ADUANAS_POR_DESTINO } from '../../data/sucursales.js';
-import { PROVEEDORES, PRODUCTOS_POR_PROVEEDOR } from '../../data/proveedores.js';
-import { getAgenciaAduanal } from '../../data/agenciaAduanal.js';
-import { getTasaIgi } from '../../data/fracciones.js';
+import { useCatalogos } from '../../context/CatalogosContext.jsx';
 import { calcularCostoLogistico } from '../../engine/calculoLogistico.js';
 
 const initialState = {
@@ -25,16 +22,12 @@ function reducer(state, action) {
   switch (action.type) {
     case 'SET_FIELD': {
       const next = { ...state, [action.field]: action.value };
-      // Al cambiar Destino, la Aduana ya no es necesariamente válida
-      // (la lista de Aduanas depende de Destino, igual que en el Excel).
       if (action.field === 'destino') next.aduana = '';
       if (action.field === 'proveedor') next.producto = '';
-      // Al cambiar de producto, se sugiere la Tasa IGI del catálogo, pero
-      // queda como punto de partida editable: el usuario debe revisar
-      // manualmente si esa mercancía en particular trae o no el impuesto.
       if (action.field === 'producto') {
-        const sugerida = getTasaIgi(action.value);
-        next.tasaIgiPorcentaje = sugerida !== null ? String(sugerida * 100) : '';
+        // La Tasa IGI sugerida se resuelve en el componente (necesita el
+        // catálogo de tasasIgi, que aquí en el reducer no tenemos a la
+        // mano); PasoMercancia.jsx hace ese autofill al cambiar de producto.
       }
       return next;
     }
@@ -53,22 +46,16 @@ export const PASOS = ['General', 'Mercancía', 'Transporte', 'Resultado'];
 
 export function WizardProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const { catalogos } = useCatalogos();
 
   const setField = (field, value) => dispatch({ type: 'SET_FIELD', field, value });
   const goTo = (paso) => dispatch({ type: 'GO_TO', paso });
   const reset = () => dispatch({ type: 'RESET' });
 
-  // La Aduana se filtra por DESTINO (no por Sucursal), igual que
-  // INDIRECT($J$35) en el Excel.
-  const aduanasDisponibles = state.destino ? ADUANAS_POR_DESTINO[state.destino] ?? [] : [];
-  const productosDisponibles = state.proveedor ? PRODUCTOS_POR_PROVEEDOR[state.proveedor] ?? [] : [];
-  const agencia = state.aduana ? getAgenciaAduanal(state.aduana) : null;
+  const aduanasDisponibles = state.destino ? catalogos?.aduanasPorDestino[state.destino] ?? [] : [];
+  const productosDisponibles = state.proveedor ? catalogos?.productosPorProveedor[state.proveedor] ?? [] : [];
+  const agencia = state.aduana ? catalogos?.agenciaPorAduana[state.aduana] ?? null : null;
 
-  // Peso ya tipado correctamente: string (DEDICADO/Embalaje...) en modo
-  // "especial", o number en modo "numero". Se expone así para que ningún
-  // componente (p. ej. el aviso de PasoTransporte) tenga que repetir esta
-  // conversión y arriesgarse a que un número capturado como texto ("6000")
-  // se confunda con un peso especial y dispare "DEDICADO" por error.
   const pesoLbs = state.tipoPeso === 'especial' ? state.pesoEspecial : Number(state.pesoNumero);
   const pesoLbsCapturado = state.tipoPeso === 'especial' ? state.pesoEspecial : state.pesoNumero;
 
@@ -93,6 +80,7 @@ export function WizardProvider({ children }) {
   }, [state, pesoLbsCapturado]);
 
   const resultado = useMemo(() => {
+    if (!catalogos) return null;
     if (
       !(
         state.sucursal &&
@@ -109,18 +97,21 @@ export function WizardProvider({ children }) {
     ) {
       return null;
     }
-    return calcularCostoLogistico({
-      sucursal: state.sucursal,
-      proveedor: state.proveedor,
-      producto: state.producto,
-      valorMercancia: Number(state.valorMercancia),
-      certificadoOrigen: state.certificadoOrigen,
-      tasaIgi: Number(state.tasaIgiPorcentaje) / 100,
-      aduana: state.aduana,
-      pesoLbs,
-      cantidadBultos: Number(state.cantidadBultos),
-    });
-  }, [state, pesoLbs, pesoLbsCapturado]);
+    return calcularCostoLogistico(
+      {
+        sucursal: state.sucursal,
+        proveedor: state.proveedor,
+        producto: state.producto,
+        valorMercancia: Number(state.valorMercancia),
+        certificadoOrigen: state.certificadoOrigen,
+        tasaIgi: Number(state.tasaIgiPorcentaje) / 100,
+        aduana: state.aduana,
+        pesoLbs,
+        cantidadBultos: Number(state.cantidadBultos),
+      },
+      catalogos
+    );
+  }, [state, pesoLbs, pesoLbsCapturado, catalogos]);
 
   const value = {
     state,
@@ -133,7 +124,7 @@ export function WizardProvider({ children }) {
     agencia,
     pesoLbs,
     resultado,
-    catalogos: { SUCURSALES, PROVEEDORES },
+    catalogos,
   };
 
   return <WizardContext.Provider value={value}>{children}</WizardContext.Provider>;
