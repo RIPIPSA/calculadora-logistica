@@ -1,11 +1,26 @@
+import { useEffect, useRef } from 'react';
 import { useWizard } from './WizardContext.jsx';
 import { Field, Select, TextField } from '../ui/ui.jsx';
-import { getTasaIgi } from '../../data/fracciones.js';
 
 export function PasoMercancia() {
-  const { state, setField, productosDisponibles } = useWizard();
+  const { state, setField, productosDisponibles, catalogos } = useWizard();
   const sinProductos = state.proveedor && productosDisponibles.length === 0;
-  const sugerida = state.producto ? getTasaIgi(state.producto) : null;
+
+  const sugerida = state.producto
+    ? catalogos?.tasasIgi.find((f) => f.descripcion === state.producto)?.tasaIgi ?? null
+    : null;
+
+  // Autofill al cambiar de producto: se sugiere la tasa del catálogo como
+  // punto de partida, pero el campo queda editable (se revisa manualmente
+  // si la mercancía en particular trae o no el impuesto).
+  const productoAnterior = useRef(state.producto);
+  useEffect(() => {
+    if (state.producto !== productoAnterior.current) {
+      productoAnterior.current = state.producto;
+      setField('tasaIgiPorcentaje', sugerida !== null ? String(sugerida * 100) : '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.producto]);
 
   return (
     <div>

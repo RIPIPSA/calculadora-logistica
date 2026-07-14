@@ -1,47 +1,32 @@
-// Motor de cálculo — replica la hoja GUIALOG del Excel original, sección por
-// sección, con las correcciones de negocio confirmadas por el cliente:
+// Motor de cálculo — replica GUIALOG del Excel original, sección por
+// sección, con las correcciones de negocio confirmadas por el cliente.
 //
-//  1) "DEDICADO"/"CONSOLIDADO" se compara SIEMPRE en mayúsculas (el Excel
-//     original tenía una comparación en minúsculas que nunca se cumplía).
-//  2) La Agencia Aduanal es un campo DERIVADO de la Aduana (no un combo
-//     abierto): se resuelve con getAgenciaAduanal().
-//  3) "Sucursal" y "Destino" son campos INDEPENDIENTES (Sección I), tal como
-//     en el Excel: Destino solo determina qué Aduanas se pueden elegir
-//     (INDIRECT($J$35)); Sucursal es la que realmente recibe la mercancía
-//     y se usa para calcular la ruta de Flete de Importación (Aduana ->
-//     Sucursal, fórmula S85 del Excel). No se deben fusionar.
-//  4) El texto de comparación de tipo de embalaje ("Embalaje MIR250", etc.)
-//     se normaliza igual en la pierna de Flete Proveedor y en la de Flete
-//     de Importación (en el Excel original la segunda comparaba un texto
-//     recortado que nunca hacía match).
+// A partir de esta versión, el motor YA NO importa catálogos estáticos de
+// src/data/*.js: todo (sucursales, aduanas, proveedores, tarifas,
+// honorarios, impuestos, tasas IGI) vive en el servicio de reglas de
+// negocio (Express + SQLite) y se recibe como parámetro `catalogos`
+// (ver src/context/CatalogosContext.jsx, que lo carga una sola vez desde
+// GET /api/catalogos). Esto hace que estas funciones sigan siendo puras y
+// fáciles de testear: solo hay que pasarles un objeto `catalogos` de
+// prueba, sin necesidad de mockear imports.
+//
+// Correcciones de negocio confirmadas (se mantienen igual que antes):
+//  1) "DEDICADO"/"CONSOLIDADO" se compara SIEMPRE en mayúsculas.
+//  2) La Agencia Aduanal es un campo DERIVADO de la Aduana.
+//  3) "Sucursal" y "Destino" son campos independientes (Sección I).
+//  4) El texto de tipo de embalaje se normaliza igual en ambas piernas
+//     (Flete Proveedor y Flete de Importación).
 //
 // Los proveedores/aduanas que no tienen tarifa cargada en el catálogo
-// (p. ej. Qimarox, OnRobot, Robotiq, Dellner, Italvibras, o rutas no
-// contempladas) devuelven `null`/"PD" igual que el Excel original, en vez
-// de inventar un número.
+// devuelven `null`/"PD", en vez de inventar un número.
 
-import { getAgenciaAduanal } from '../data/agenciaAduanal.js';
-import {
-  RUTAS_DEDICADO_PROVEEDOR,
-  RUTAS_CONSOLIDADO_PROVEEDOR,
-  UR_TARIFA_POR_EQUIPOS,
-} from '../data/fletesProveedor.js';
-import { OPCIONES_ESPECIALES_PESO } from '../data/rangoPeso.js';
-import { getRutaImpo } from '../data/fletesImpo.js';
-import { calcularCostoBodega, calcularHonorariosAA } from '../data/bodega.js';
-
-// "Peso especial" = el usuario eligió DEDICADO o un tipo de embalaje MiR/UR
-// en vez de capturar un número de libras. Se compara contra el catálogo
-// real (no contra "typeof === string" a secas) para que un número que por
-// error llegue como texto (p. ej. "6000") NO se confunda con un peso
-// especial y dispare "DEDICADO" de forma incorrecta.
-function esPesoEspecial(peso) {
-  return typeof peso === 'string' && OPCIONES_ESPECIALES_PESO.includes(peso);
+function esPesoEspecial(peso, opcionesEspecialesPeso) {
+  return typeof peso === 'string' && opcionesEspecialesPeso.includes(peso);
 }
 
 /** Sección III: determina si el embarque es DEDICADO o CONSOLIDADO. */
-export function calcularTipoEmbarque(pesoLbs, cantidadBultos) {
-  if (esPesoEspecial(pesoLbs)) return 'DEDICADO'; // DEDICADO o Embalaje... fuerza dedicado
+export function calcularTipoEmbarque(pesoLbs, cantidadBultos, opcionesEspecialesPeso) {
+  if (esPesoEspecial(pesoLbs, opcionesEspecialesPeso)) return 'DEDICADO';
   const peso = Number(pesoLbs) || 0;
   const bultos = Number(cantidadBultos) || 0;
   if (peso > 5000 || bultos > 7) return 'DEDICADO';
@@ -49,9 +34,9 @@ export function calcularTipoEmbarque(pesoLbs, cantidadBultos) {
 }
 
 /** Marca de "pequeña importación": peso numérico < 200 lbs y 1 solo bulto. */
-export function calcularNotaImpoPartes(pesoLbs, cantidadBultos, tipoEmbarque) {
+export function calcularNotaImpoPartes(pesoLbs, cantidadBultos, tipoEmbarque, opcionesEspecialesPeso) {
   const bultos = Number(cantidadBultos) || 0;
-  if (!esPesoEspecial(pesoLbs) && Number(pesoLbs) < 200 && bultos === 1) {
+  if (!esPesoEspecial(pesoLbs, opcionesEspecialesPeso) && Number(pesoLbs) < 200 && bultos === 1) {
     return 'pequeñaimportacion';
   }
   return tipoEmbarque;
@@ -65,7 +50,6 @@ export function calcularNumeroCamiones(cantidadBultos) {
   return 1;
 }
 
-/** Elige FTL / RABON / 3.5T / CONSOLIDADO según el peso (o el embalaje elegido). */
 function elegirTipoTransporte(tipoEmbarque, pesoLbs, umbrales) {
   if (tipoEmbarque !== 'DEDICADO') return 'CONSOLIDADO';
   if (pesoLbs === 'Embalaje MIR250') return '3.5 T';
@@ -84,7 +68,7 @@ const UMBRALES_PROVEEDOR = { ftl: 9000, rabonMin: 7000, rabonMax: 10000, t35Min:
 const UMBRALES_IMPO = { ftl: 15000, rabonMin: 7000, rabonMax: 15000, t35Min: 2000, t35Max: 7000 };
 
 /** Costo 1: Flete Proveedor -> Aduana. */
-export function calcularFleteProveedor({ proveedor, aduana, pesoLbs, cantidadBultos, tipoEmbarque }) {
+export function calcularFleteProveedor({ proveedor, aduana, pesoLbs, cantidadBultos, tipoEmbarque }, catalogos) {
   const tipoTransporte = elegirTipoTransporte(tipoEmbarque, pesoLbs, UMBRALES_PROVEEDOR);
   const numeroCamiones = calcularNumeroCamiones(cantidadBultos);
   const peso = Number(pesoLbs) || 0;
@@ -93,16 +77,15 @@ export function calcularFleteProveedor({ proveedor, aduana, pesoLbs, cantidadBul
 
   if (proveedor === 'MiR' || proveedor === 'UR') {
     if (tipoTransporte === 'CONSOLIDADO') {
-      tarifaBase = RUTAS_CONSOLIDADO_PROVEEDOR[proveedor]?.flat ?? null;
+      tarifaBase = catalogos.rutasConsolidadoProveedor[proveedor]?.['*']?.flat ?? null;
     } else if (proveedor === 'UR' && (pesoLbs === 'Embalaje URe' || pesoLbs === 'Embalaje UR20')) {
-      // Tarifa UR por cantidad de equipos (bultos = número de equipos)
-      const fila = UR_TARIFA_POR_EQUIPOS.find((f) => f.equipos === Number(cantidadBultos));
+      const fila = catalogos.urTarifaPorEquipos.find((f) => f.equipos === Number(cantidadBultos));
       if (fila) tarifaBase = tipoTransporte === "FTL 53'" ? fila.FTL : fila.RABON;
     } else {
-      tarifaBase = RUTAS_DEDICADO_PROVEEDOR[proveedor]?.[aduana]?.[tipoTransporte] ?? null;
+      tarifaBase = catalogos.rutasDedicadoProveedor[proveedor]?.[aduana]?.[tipoTransporte] ?? null;
     }
   } else if (tipoTransporte === 'CONSOLIDADO') {
-    const tabla = RUTAS_CONSOLIDADO_PROVEEDOR[proveedor]?.[aduana];
+    const tabla = catalogos.rutasConsolidadoProveedor[proveedor]?.[aduana];
     if (tabla) {
       if (peso === 100) tarifaBase = tabla.minCharge;
       else if (peso > 100 && peso < 300) tarifaBase = peso * tabla['100-299'];
@@ -112,7 +95,7 @@ export function calcularFleteProveedor({ proveedor, aduana, pesoLbs, cantidadBul
       else if (peso >= 2000 && peso <= 5000) tarifaBase = peso * tabla['2000+'];
     }
   } else {
-    tarifaBase = RUTAS_DEDICADO_PROVEEDOR[proveedor]?.[aduana]?.[tipoTransporte] ?? null;
+    tarifaBase = catalogos.rutasDedicadoProveedor[proveedor]?.[aduana]?.[tipoTransporte] ?? null;
   }
 
   if (tarifaBase === null || tarifaBase === undefined) {
@@ -123,10 +106,10 @@ export function calcularFleteProveedor({ proveedor, aduana, pesoLbs, cantidadBul
 }
 
 /** Costo 2: Flete de Importación, Aduana -> Sucursal. */
-export function calcularFleteImpo({ aduana, sucursal, pesoLbs, cantidadBultos, tipoEmbarque }) {
+export function calcularFleteImpo({ aduana, sucursal, pesoLbs, cantidadBultos, tipoEmbarque }, catalogos) {
   const tipoTransporte = elegirTipoTransporte(tipoEmbarque, pesoLbs, UMBRALES_IMPO);
   const numeroCamiones = calcularNumeroCamiones(cantidadBultos);
-  const ruta = getRutaImpo(aduana, sucursal);
+  const ruta = catalogos.rutasImpoAduanaSucursal[aduana]?.[sucursal] ?? null;
   const cruceFronterizo = Number(cantidadBultos) === 0 ? 0 : 130 * numeroCamiones;
 
   if (!ruta || ruta[tipoTransporte] === undefined) {
@@ -138,18 +121,37 @@ export function calcularFleteImpo({ aduana, sucursal, pesoLbs, cantidadBultos, t
 }
 
 /** Costo 3: Bodega y Recinto. */
-export function calcularBodegaYRecinto({ aduana, pesoLbs }) {
+export function calcularBodegaYRecinto({ aduana, pesoLbs }, catalogos) {
   const peso = Number(pesoLbs) || 0;
-  const total = calcularCostoBodega(aduana, peso);
-  return { total: total ?? null, pd: total === null };
+  const t = catalogos.tarifaBodegaPorAduana[aduana];
+  if (!t) return { total: null, pd: true };
+  const total = peso < 1000 ? t.min : peso < 2000 ? t.medio : t.alto;
+  return { total, pd: false };
+}
+
+/** Evalúa los honorarios de Agencia Aduanal según los parámetros data-driven de la aduana. */
+function evaluarHonorariosAA(params, valorMercancia) {
+  if (!params) return null;
+  if (params.tipo === 'lineal') {
+    return params.pct * valorMercancia + params.fijo;
+  }
+  if (params.tipo === 'tramos') {
+    for (const tramo of params.tramos) {
+      if (valorMercancia < tramo.hasta) return tramo.monto;
+    }
+    return valorMercancia * params.pctExcedente;
+  }
+  return null;
 }
 
 /** Costo 4 y 5: Honorarios de Agencia Aduanal + Impuestos (DTA + IGI). */
-export function calcularHonorariosEImpuestos({ aduana, valorMercancia, valorAduana, tasaIgi, certificadoOrigen }) {
-  const honorariosAA = calcularHonorariosAA(aduana, valorMercancia);
-  const dta = certificadoOrigen === 'NO' ? valorAduana * 0.008 + 15 : 20 + 15;
+export function calcularHonorariosEImpuestos({ aduana, valorMercancia, valorAduana, tasaIgi, certificadoOrigen }, catalogos) {
+  const honorariosAA = evaluarHonorariosAA(catalogos.honorariosAA[aduana], valorMercancia);
+  const { tasaDtaVariable, feeFijoDta, flatConCertificado } = catalogos.impuestos;
+  const dta = certificadoOrigen === 'NO' ? valorAduana * tasaDtaVariable + feeFijoDta : flatConCertificado;
   const igi = tasaIgi * valorAduana;
-  const totalImpuestos = certificadoOrigen === 'SI' ? 20 + 15 : valorAduana * 0.008 + 15 + valorAduana * tasaIgi;
+  const totalImpuestos =
+    certificadoOrigen === 'SI' ? flatConCertificado : valorAduana * tasaDtaVariable + feeFijoDta + valorAduana * tasaIgi;
   return {
     honorariosAA: honorariosAA ?? null,
     dta,
@@ -162,57 +164,47 @@ export function calcularHonorariosEImpuestos({ aduana, valorMercancia, valorAdua
 /**
  * Calcula el costo logístico completo a partir de las respuestas del wizard.
  * @param {object} datos - ver forma esperada en components/wizard/WizardContext
+ * @param {object} catalogos - ver forma exacta en context/CatalogosContext.jsx (GET /api/catalogos)
  */
-export function calcularCostoLogistico(datos) {
+export function calcularCostoLogistico(datos, catalogos) {
   const {
-    sucursal, // Sucursal que recibe la mercancía; se usa para la ruta de Flete de Importación
+    sucursal,
     proveedor,
     valorMercancia,
     certificadoOrigen,
     aduana,
     pesoLbs,
     cantidadBultos,
-    tasaIgi, // decimal (0.15 = 15%). Se captura/confirma manualmente en el formulario,
-    // ya que en la práctica se revisa mercancía por mercancía si trae o no el impuesto.
+    tasaIgi,
   } = datos;
 
-  const agencia = getAgenciaAduanal(aduana);
-  const tipoEmbarque = calcularTipoEmbarque(pesoLbs, cantidadBultos);
-  const notaImpoPartes = calcularNotaImpoPartes(pesoLbs, cantidadBultos, tipoEmbarque);
+  const agencia = catalogos.agenciaPorAduana[aduana] ?? null;
+  const tipoEmbarque = calcularTipoEmbarque(pesoLbs, cantidadBultos, catalogos.opcionesEspecialesPeso);
+  const notaImpoPartes = calcularNotaImpoPartes(pesoLbs, cantidadBultos, tipoEmbarque, catalogos.opcionesEspecialesPeso);
   const esPequenaImportacion = notaImpoPartes === 'pequeñaimportacion';
 
-  // Costo 1: Flete Proveedor. Si es "pequeña importación" y el valor de
-  // mercancía es menor a $1,000 usd, el Excel usa una cuota fija del 12%
-  // del valor de mercancía en vez de la tabla de tarifas.
   let costo1;
   if (esPequenaImportacion && valorMercancia < 1000) {
     costo1 = { total: valorMercancia * 0.12, tipoTransporte: tipoEmbarque, pd: false };
   } else {
-    costo1 = calcularFleteProveedor({ proveedor, aduana, pesoLbs, cantidadBultos, tipoEmbarque });
+    costo1 = calcularFleteProveedor({ proveedor, aduana, pesoLbs, cantidadBultos, tipoEmbarque }, catalogos);
   }
 
-  // Costo 2: Flete de Importación (misma regla de pequeña importación).
   let costo2;
   if (esPequenaImportacion && valorMercancia < 1000) {
     costo2 = { total: valorMercancia * 0.12, tipoTransporte: tipoEmbarque, cruceFronterizo: 0, pd: false };
   } else {
-    costo2 = calcularFleteImpo({ aduana, sucursal, pesoLbs, cantidadBultos, tipoEmbarque });
+    costo2 = calcularFleteImpo({ aduana, sucursal, pesoLbs, cantidadBultos, tipoEmbarque }, catalogos);
   }
 
-  // Costo 3: Bodega y Recinto
-  const costo3 = calcularBodegaYRecinto({ aduana, pesoLbs });
+  const costo3 = calcularBodegaYRecinto({ aduana, pesoLbs }, catalogos);
 
-  // Valor Aduana = Valor Mercancía + Total Flete de Importación
   const valorAduana = valorMercancia + (costo2.total ?? 0);
 
-  // Costo 4 y 5: Honorarios A.A. e Impuestos
-  const costo45 = calcularHonorariosEImpuestos({
-    aduana,
-    valorMercancia,
-    valorAduana,
-    tasaIgi: tasaIgi ?? 0,
-    certificadoOrigen,
-  });
+  const costo45 = calcularHonorariosEImpuestos(
+    { aduana, valorMercancia, valorAduana, tasaIgi: tasaIgi ?? 0, certificadoOrigen },
+    catalogos
+  );
 
   const huboPD = costo1.pd || costo2.pd || costo3.pd || costo45.pd;
 

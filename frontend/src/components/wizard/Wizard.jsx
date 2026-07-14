@@ -7,11 +7,11 @@ import { PasoResultado } from './PasoResultado.jsx';
 import { Card, Button, Badge } from '../ui/ui.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { LogoRipipsa } from '../ui/LogoRipipsa.jsx';
-import './ui/wizard.css';
+import './wizard.css';
 
 const PASO_COMPONENTES = [PasoGeneral, PasoMercancia, PasoTransporte, PasoResultado];
 
-function WizardBody() {
+function WizardBody({ onAbrirAdmin }) {
   const { state, goTo, pasoValido } = useWizard();
   const { usuario, logout } = useAuth();
   const PasoActivo = PASO_COMPONENTES[state.paso];
@@ -21,14 +21,19 @@ function WizardBody() {
     <div className="wizard-shell">
       <div className="wizard-header">
         <span className="wizard-header__brand">
-          <LogoRipipsa size={28} />
+          <LogoRipipsa size={42} />
           <span>Costo Logístico</span>
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
           {usuario?.modoPrueba && <Badge tone="warning">Modo de prueba · sin Epicor</Badge>}
+          {usuario?.esSuperusuario && (
+            <Button variant="outlined" onClick={onAbrirAdmin}>
+              Reglas de negocio
+            </Button>
+          )}
           {usuario && (
             <Button variant="text" onClick={logout}>
-              Salir ({usuario.nombre})
+              Salir ({usuario.nombreCompleto ?? usuario.nombre})
             </Button>
           )}
         </div>
@@ -54,10 +59,10 @@ function WizardBody() {
   );
 }
 
-export function Wizard() {
+export function Wizard({ onAbrirAdmin }) {
   return (
     <WizardProvider>
-      <WizardBody />
+      <WizardBody onAbrirAdmin={onAbrirAdmin} />
     </WizardProvider>
   );
 }

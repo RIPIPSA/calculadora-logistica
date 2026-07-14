@@ -1,5 +1,5 @@
 import { PASOS, useWizard } from './WizardContext.jsx';
-import './ui/wizard.css';
+import './wizard.css';
 
 export function Stepper() {
   const { state, goTo } = useWizard();
