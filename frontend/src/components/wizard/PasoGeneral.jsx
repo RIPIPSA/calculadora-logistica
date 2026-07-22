@@ -74,12 +74,12 @@ export function PasoGeneral() {
         </Select>
       </Field>
 
-      {agencia && (
+      {/* {agencia && (
         <div className="field-notice">
           Agencia aduanal asignada automáticamente: <Badge tone="primary">{agencia.agencia}</Badge> · Zona{' '}
           {agencia.zona}
         </div>
-      )}
+      )} */}
     </div>
   );
 }
