@@ -39,10 +39,10 @@ export function PasoResultado() {
           <strong>{state.producto}</strong>
           Producto
         </div>
-        <div>
+        {/* <div>
           <strong>{agencia?.agencia ?? '—'}</strong>
           Agencia aduanal
-        </div>
+        </div> */}
         <div>
           <strong>{tasaIgi !== null ? `${(tasaIgi * 100).toFixed(1)}%` : '—'}</strong>
           Tasa IGI

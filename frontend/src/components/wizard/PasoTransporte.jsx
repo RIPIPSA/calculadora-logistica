@@ -65,7 +65,7 @@ export function PasoTransporte() {
           type="number"
           min="1"
           step="1"
-          placeholder="1"
+          placeholder="Ejem. 1"
           value={state.cantidadBultos}
           onChange={(e) => setField('cantidadBultos', e.target.value)}
         />
