@@ -87,3 +87,45 @@ export async function restaurarRespaldo(archivo, { epicorToken, usuario }) {
   if (!r.ok) throw new Error((await r.json()).error || 'No se pudo restaurar.');
   return r.json();
 }
+
+// --- Catálogos editables agregados en la v2 del panel ---
+
+export async function guardarProveedoresProductos(porProveedor, { epicorToken, usuario }) {
+  const r = await fetch(`${BASE_URL}/api/reglas-negocio/proveedores-productos`, {
+    method: 'PUT',
+    headers: headersEscritura(epicorToken, usuario),
+    body: JSON.stringify(porProveedor),
+  });
+  if (!r.ok) throw new Error((await r.json()).error || 'No se pudo guardar.');
+  return r.json();
+}
+
+export async function guardarFleteProveedor(datos, { epicorToken, usuario }) {
+  const r = await fetch(`${BASE_URL}/api/reglas-negocio/flete-proveedor`, {
+    method: 'PUT',
+    headers: headersEscritura(epicorToken, usuario),
+    body: JSON.stringify(datos),
+  });
+  if (!r.ok) throw new Error((await r.json()).error || 'No se pudo guardar.');
+  return r.json();
+}
+
+export async function guardarFleteImpo(porAduana, { epicorToken, usuario }) {
+  const r = await fetch(`${BASE_URL}/api/reglas-negocio/flete-impo`, {
+    method: 'PUT',
+    headers: headersEscritura(epicorToken, usuario),
+    body: JSON.stringify(porAduana),
+  });
+  if (!r.ok) throw new Error((await r.json()).error || 'No se pudo guardar.');
+  return r.json();
+}
+
+export async function guardarBodega(porAduana, { epicorToken, usuario }) {
+  const r = await fetch(`${BASE_URL}/api/reglas-negocio/bodega`, {
+    method: 'PUT',
+    headers: headersEscritura(epicorToken, usuario),
+    body: JSON.stringify(porAduana),
+  });
+  if (!r.ok) throw new Error((await r.json()).error || 'No se pudo guardar.');
+  return r.json();
+}

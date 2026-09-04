@@ -9,6 +9,10 @@ import {
   obtenerBitacora,
   urlRespaldo,
   restaurarRespaldo,
+  guardarProveedoresProductos,
+  guardarFleteProveedor,
+  guardarFleteImpo,
+  guardarBodega,
 } from '../../services/reglasNegocio.js';
 
 const AdminContext = createContext(null);
@@ -17,7 +21,10 @@ export function AdminProvider({ children }) {
   const { usuario } = useAuth();
   const { recargar: recargarCatalogos } = useCatalogos();
 
-  const [reglas, setReglas] = useState(null); // { tasasIgi, honorariosAA, impuestos }
+  // `reglas` guarda ahora el catálogo COMPLETO: las 3 tablas editables
+  // originales más las 4 que se agregaron al panel (proveedor-mercancía,
+  // flete proveedor, flete impo y bodega).
+  const [reglas, setReglas] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
   const [guardando, setGuardando] = useState(false);
@@ -30,7 +37,7 @@ export function AdminProvider({ children }) {
     setError(null);
     try {
       const datos = await obtenerCatalogos();
-      setReglas({ tasasIgi: datos.tasasIgi, honorariosAA: datos.honorariosAA, impuestos: datos.impuestos });
+      setReglas(datos);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -64,6 +71,15 @@ export function AdminProvider({ children }) {
   const guardarHonorarios = (honorariosAA) =>
     ejecutarGuardado(() => guardarHonorariosAA(honorariosAA, credenciales), 'Honorarios A.A. guardados.');
   const guardarImp = (impuestos) => ejecutarGuardado(() => guardarImpuestos(impuestos, credenciales), 'Impuestos guardados.');
+
+  const guardarProvProd = (porProveedor) =>
+    ejecutarGuardado(() => guardarProveedoresProductos(porProveedor, credenciales), 'Proveedor-Mercancía guardado.');
+  const guardarFleteProv = (datos) =>
+    ejecutarGuardado(() => guardarFleteProveedor(datos, credenciales), 'Flete Proveedor guardado.');
+  const guardarFleteImp = (porAduana) =>
+    ejecutarGuardado(() => guardarFleteImpo(porAduana, credenciales), 'Flete Importación guardado.');
+  const guardarBod = (porAduana) =>
+    ejecutarGuardado(() => guardarBodega(porAduana, credenciales), 'Bodega y Recinto guardado.');
 
   const cargarBitacora = useCallback(
     (limite) => obtenerBitacora({ epicorToken: usuario?.token, usuario: usuario?.nombre }, limite),
@@ -113,6 +129,10 @@ export function AdminProvider({ children }) {
     guardarTasas,
     guardarHonorarios,
     guardarImp,
+    guardarProvProd,
+    guardarFleteProv,
+    guardarFleteImp,
+    guardarBod,
     cargarBitacora,
     descargarRespaldo,
     restaurar,

@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { AdminProvider, useAdmin } from './AdminContext.jsx';
 import { SeccionTasasIgi } from './SeccionTasasIgi.jsx';
+import { SeccionProveedorMercancia } from './SeccionProveedorMercancia.jsx';
+import { SeccionFleteProveedor } from './SeccionFleteProveedor.jsx';
+import { SeccionFleteImpo } from './SeccionFleteImpo.jsx';
+import { SeccionBodega } from './SeccionBodega.jsx';
 import { SeccionHonorariosAA } from './SeccionHonorariosAA.jsx';
 import { SeccionImpuestos } from './SeccionImpuestos.jsx';
 import { SeccionBitacora } from './SeccionBitacora.jsx';
@@ -12,6 +16,10 @@ const PESTANAS = [
   { id: 'tasas', label: 'Tasas IGI', Componente: SeccionTasasIgi },
   { id: 'honorarios', label: 'Honorarios A.A.', Componente: SeccionHonorariosAA },
   { id: 'impuestos', label: 'Impuestos', Componente: SeccionImpuestos },
+  { id: 'prov-merc', label: 'Proveedor-Mercancía', Componente: SeccionProveedorMercancia },
+  { id: 'flete-prov', label: 'Flete Proveedor', Componente: SeccionFleteProveedor },
+  { id: 'flete-impo', label: 'Flete Impo', Componente: SeccionFleteImpo },
+  { id: 'bodega', label: 'Bodega-Recinto', Componente: SeccionBodega },
   { id: 'bitacora', label: 'Bitácora', Componente: SeccionBitacora },
   { id: 'respaldo', label: 'Respaldo', Componente: SeccionRespaldo },
 ];

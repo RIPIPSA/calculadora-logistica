@@ -55,7 +55,7 @@
 .admin-table__header,
 .admin-table__row {
   display: grid;
-  grid-template-columns: 3fr 1.2fr 1fr auto;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1.2fr) minmax(0, 1fr) 92px;
   gap: var(--space-2);
   align-items: center;
 }
@@ -167,4 +167,219 @@
   .admin-bitacora__row {
     grid-template-columns: 1fr;
   }
+}
+
+/* ===== Catálogos agregados en la v2 del panel ===== */
+
+.admin-grupo {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.admin-grupo__titulo {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-body);
+  color: var(--color-primary-dark);
+}
+
+.admin-grupo__vacio {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-caption);
+  color: var(--color-text-faint);
+}
+
+.admin-bloque__titulo {
+  margin: var(--space-5) 0 var(--space-1);
+  padding-top: var(--space-3);
+  border-top: 2px solid var(--color-border);
+  font-size: var(--font-size-body);
+  color: var(--color-primary);
+}
+
+.admin-subgrupo {
+  border-left: 3px solid var(--color-border);
+  padding-left: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.admin-subgrupo__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.admin-franjas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-2);
+}
+
+.admin-franjas label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--font-size-caption);
+  color: var(--color-text-faint);
+}
+
+.admin-franjas label small {
+  color: var(--color-text-faint);
+  opacity: 0.75;
+  font-size: 11px;
+}
+
+.admin-agregar {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+.admin-agregar--proveedor {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.admin-table__label {
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+}
+
+/* Rejillas por tipo de tabla */
+.admin-table--bodega {
+  grid-template-columns: minmax(90px, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+.admin-table--impo {
+  grid-template-columns: minmax(90px, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 92px;
+}
+.admin-table--ded {
+  grid-template-columns: minmax(90px, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 92px;
+}
+.admin-table--ur {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 92px;
+}
+
+/* Chips de productos asignados a un proveedor */
+.admin-chips {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.admin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 4px var(--space-2) 4px var(--space-3);
+  font-size: var(--font-size-caption);
+}
+
+.admin-chip__quitar {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--color-text-faint);
+  padding: 0 2px;
+}
+
+.admin-chip__quitar:hover {
+  color: var(--color-error);
+}
+
+/* En pantallas angostas NO se apilan estas tablas: apiladas, el usuario ve
+   4 campos numéricos seguidos sin saber cuál es FTL y cuál RABON. Es más
+   claro conservar las columnas y dejar que el contenedor haga scroll
+   horizontal (ver .admin-table { overflow-x: auto } más abajo). */
+@media (max-width: 720px) {
+  .admin-table--bodega,
+  .admin-table--impo,
+  .admin-table--ded,
+  .admin-table--ur {
+    min-width: 620px;
+  }
+}
+
+/* ===== Corrección de desbordamiento en las tablas del panel =====
+ *
+ * `.ui-input` no define ancho, así que los <input> y <select> usan su
+ * ancho intrínseco (~200px). Dentro de un grid eso se vuelve el ancho
+ * MÍNIMO de la columna: las columnas no podían encogerse y se salían del
+ * contenedor. Además el encabezado (texto angosto) y las filas (inputs
+ * anchos) resolvían anchos distintos, y por eso no alineaban entre sí.
+ *
+ * La solución es doble: minmax(0, …) en las rejillas (arriba) para que las
+ * columnas puedan encoger, y estas reglas para que los campos ocupen
+ * exactamente el ancho de su celda, ni más ni menos.
+ */
+
+.admin-table .ui-input,
+.admin-franjas .ui-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.admin-table__header,
+.admin-table__row {
+  min-width: 0;
+}
+
+.admin-table__header > *,
+.admin-table__row > * {
+  min-width: 0;
+}
+
+/* El texto largo de la primera columna (aduana, destino, proveedor) se
+   parte en varias líneas en vez de empujar la tabla a lo ancho. */
+.admin-table__label {
+  overflow-wrap: anywhere;
+}
+
+/* El botón "Eliminar" se ajusta a su columna fija y no la desborda. */
+.admin-table__row .ui-button {
+  width: 100%;
+  min-width: 0;
+  padding-inline: var(--space-1);
+  justify-content: center;
+  white-space: nowrap;
+}
+
+/* Red de seguridad: si aun así no cabe (muchas columnas en pantalla
+   angosta), la tabla hace scroll horizontal en lugar de romper la tarjeta. */
+.admin-table {
+  overflow-x: auto;
+}
+
+/* Los combos de "agregar" no deben estirarse ni desbordar la tarjeta. */
+.admin-agregar .ui-input {
+  flex: 1 1 200px;
+  min-width: 0;
+  max-width: 320px;
+  box-sizing: border-box;
+}
+
+.admin-agregar .ui-button {
+  flex: 0 0 auto;
+}
+
+/* Los chips de producto pueden traer descripciones muy largas. */
+.admin-chip {
+  max-width: 100%;
+}
+
+.admin-chip span {
+  overflow-wrap: anywhere;
 }

@@ -262,6 +262,321 @@ app.put('/api/reglas-negocio/impuestos', requireSesionEpicor, requireSuperusuari
   res.json({ ok: true });
 });
 
+// =====================================================================
+// Catálogos editables agregados en la v2 del panel de administración.
+//
+// NOTA DE DISEÑO IMPORTANTE: el motor de cálculo (frontend) busca claves
+// EXACTAS y hardcodeadas en estas tablas:
+//   - tipo_transporte: "FTL 53'", "RABON 20'", "3.5 T", "CONSOLIDADO"
+//   - franja (consolidado): minCharge, 100-299, 300-499, 500-999,
+//     1000-2000, 2000+, flat
+// Si se guardara una clave distinta, el cálculo devolvería "PD" en
+// silencio. Por eso estos endpoints VALIDAN las claves recibidas y
+// rechazan cualquiera que no esté en la lista blanca: es preferible un
+// error explícito al guardar que un costo mal calculado en producción.
+// =====================================================================
+
+/**
+ * Registra en la bitácora SOLO las filas que cambiaron, comparando dos
+ * mapas planos { "clave|compuesta": valor }.
+ *
+ * La alternativa (volcar la tabla completa en cada guardado) hacía la
+ * bitácora ilegible: un solo cambio de tarifa generaba un renglón con
+ * miles de caracteres de JSON, y respondía muy mal a la pregunta para la
+ * que existe la bitácora: "¿quién cambió ESTA tarifa y cuándo?".
+ */
+function registrarDiff({ usuario, tabla, campo, antes, despues }) {
+  const claves = new Set([...Object.keys(antes), ...Object.keys(despues)]);
+  for (const clave of claves) {
+    const a = antes[clave];
+    const d = despues[clave];
+    if (a === d) continue;
+    registrarCambio({
+      usuario,
+      tabla,
+      clave,
+      campo,
+      valorAnterior: a === undefined ? '(no existía)' : a,
+      valorNuevo: d === undefined ? '(eliminado)' : d,
+    });
+  }
+}
+
+const TIPOS_TRANSPORTE_DEDICADO = ["FTL 53'", "RABON 20'", '3.5 T'];
+const TIPOS_TRANSPORTE_IMPO = ["FTL 53'", "RABON 20'", '3.5 T', 'CONSOLIDADO'];
+const FRANJAS_CONSOLIDADO = ['minCharge', '100-299', '300-499', '500-999', '1000-2000', '2000+'];
+
+// --- Proveedor-Mercancía: qué productos ofrece cada proveedor ---
+app.put('/api/reglas-negocio/proveedores-productos', requireSesionEpicor, requireSuperusuario, async (req, res) => {
+  const nuevo = req.body; // { [proveedor]: [producto, ...] }
+  if (!nuevo || typeof nuevo !== 'object' || Array.isArray(nuevo)) {
+    return res.status(400).json({ error: 'Se esperaba un objeto { [proveedor]: [productos] }.' });
+  }
+
+  // El producto debe existir en tasas_igi: si no coincide EXACTAMENTE con
+  // una descripción de ese catálogo, la app no podría sugerir la tasa IGI
+  // y el operador tendría que capturarla a mano sin saber por qué.
+  const productosValidos = new Set(db.prepare('SELECT descripcion FROM tasas_igi').all().map((f) => f.descripcion));
+  const desconocidos = [];
+  for (const [proveedor, productos] of Object.entries(nuevo)) {
+    if (!Array.isArray(productos)) {
+      return res.status(400).json({ error: `Los productos de "${proveedor}" deben ser una lista.` });
+    }
+    for (const p of productos) if (!productosValidos.has(p)) desconocidos.push(`${proveedor} → "${p}"`);
+  }
+  if (desconocidos.length) {
+    return res.status(400).json({
+      error:
+        'Estos productos no existen en el catálogo de Tasas IGI y romperían la sugerencia automática de tasa. ' +
+        'Agrégalos primero en la pestaña "Tasas IGI" (con el texto idéntico): ' +
+        desconocidos.join('; '),
+    });
+  }
+
+  const antes = {};
+  for (const f of db.prepare('SELECT * FROM productos_por_proveedor').all()) {
+    (antes[f.proveedor] ??= []).push(f.producto);
+  }
+  const antesPlano = Object.fromEntries(
+    Object.entries(antes).map(([prov, prods]) => [prov, prods.slice().sort().join(', ')])
+  );
+  const despuesPlano = Object.fromEntries(
+    Object.entries(nuevo).map(([prov, prods]) => [prov, prods.slice().sort().join(', ') || '(sin productos)'])
+  );
+
+  const insertProveedor = db.prepare('INSERT OR IGNORE INTO proveedores (nombre) VALUES (?)');
+  const insertProducto = db.prepare('INSERT INTO productos_por_proveedor (proveedor, producto) VALUES (?, ?)');
+
+  const guardar = db.transaction(() => {
+    db.exec('DELETE FROM productos_por_proveedor');
+    for (const [proveedor, productos] of Object.entries(nuevo)) {
+      insertProveedor.run(proveedor);
+      for (const producto of productos) insertProducto.run(proveedor, producto);
+    }
+    registrarDiff({
+      usuario: req.usuario,
+      tabla: 'productos_por_proveedor',
+      campo: 'lista_productos',
+      antes: antesPlano,
+      despues: despuesPlano,
+    });
+  });
+  guardar();
+  await respaldarAntesDeEscribir();
+  res.json({ ok: true });
+});
+
+// --- Flete Proveedor: dedicado + consolidado + tarifa UR por equipos ---
+app.put('/api/reglas-negocio/flete-proveedor', requireSesionEpicor, requireSuperusuario, async (req, res) => {
+  const { dedicado, consolidado, urPorEquipos } = req.body || {};
+  if (!dedicado || !consolidado || !Array.isArray(urPorEquipos)) {
+    return res
+      .status(400)
+      .json({ error: 'Se esperaba { dedicado, consolidado, urPorEquipos }.' });
+  }
+
+  // Validación de claves (ver nota de diseño arriba).
+  for (const [proveedor, porAduana] of Object.entries(dedicado)) {
+    for (const [aduana, tarifas] of Object.entries(porAduana)) {
+      for (const tipo of Object.keys(tarifas)) {
+        if (!TIPOS_TRANSPORTE_DEDICADO.includes(tipo)) {
+          return res.status(400).json({
+            error: `Tipo de transporte no reconocido en ${proveedor}/${aduana}: "${tipo}". Permitidos: ${TIPOS_TRANSPORTE_DEDICADO.join(', ')}.`,
+          });
+        }
+      }
+    }
+  }
+  for (const [proveedor, porAduana] of Object.entries(consolidado)) {
+    for (const [aduana, franjas] of Object.entries(porAduana)) {
+      for (const franja of Object.keys(franjas)) {
+        // 'flat' solo aplica a la aduana comodín '*' (caso MiR/UR).
+        const permitido = aduana === '*' ? ['flat'] : FRANJAS_CONSOLIDADO;
+        if (!permitido.includes(franja)) {
+          return res.status(400).json({
+            error: `Franja no reconocida en ${proveedor}/${aduana}: "${franja}". Permitidas: ${permitido.join(', ')}.`,
+          });
+        }
+      }
+    }
+  }
+
+  // Se aplanan a mapas "clave|compuesta" -> valor para poder comparar fila
+  // por fila y registrar solo lo que realmente cambió.
+  const antesDedicado = Object.fromEntries(
+    db
+      .prepare('SELECT * FROM rutas_dedicado_proveedor')
+      .all()
+      .map((f) => [`${f.proveedor} · ${f.aduana} · ${f.tipo_transporte}`, String(f.tarifa)])
+  );
+  const antesConsolidado = Object.fromEntries(
+    db
+      .prepare('SELECT * FROM rutas_consolidado_proveedor')
+      .all()
+      .map((f) => [`${f.proveedor} · ${f.aduana} · ${f.franja}`, String(f.valor)])
+  );
+  const antesUr = Object.fromEntries(
+    db
+      .prepare('SELECT * FROM ur_tarifa_por_equipos')
+      .all()
+      .map((f) => [`${f.equipos} equipos`, `FTL ${f.ftl} / RABON ${f.rabon}`])
+  );
+
+  const despuesDedicado = {};
+  for (const [prov, porAduana] of Object.entries(dedicado))
+    for (const [aduana, tarifas] of Object.entries(porAduana))
+      for (const [tipo, tarifa] of Object.entries(tarifas))
+        despuesDedicado[`${prov} · ${aduana} · ${tipo}`] = String(Number(tarifa));
+
+  const despuesConsolidado = {};
+  for (const [prov, porAduana] of Object.entries(consolidado))
+    for (const [aduana, franjas] of Object.entries(porAduana))
+      for (const [franja, valor] of Object.entries(franjas))
+        despuesConsolidado[`${prov} · ${aduana} · ${franja}`] = String(Number(valor));
+
+  const despuesUr = Object.fromEntries(
+    urPorEquipos.map((f) => [`${Number(f.equipos)} equipos`, `FTL ${Number(f.FTL)} / RABON ${Number(f.RABON)}`])
+  );
+
+  const insDed = db.prepare(
+    'INSERT INTO rutas_dedicado_proveedor (proveedor, aduana, tipo_transporte, tarifa) VALUES (?, ?, ?, ?)'
+  );
+  const insCons = db.prepare(
+    'INSERT INTO rutas_consolidado_proveedor (proveedor, aduana, franja, valor) VALUES (?, ?, ?, ?)'
+  );
+  const insUr = db.prepare('INSERT INTO ur_tarifa_por_equipos (equipos, ftl, rabon) VALUES (?, ?, ?)');
+
+  const guardar = db.transaction(() => {
+    db.exec('DELETE FROM rutas_dedicado_proveedor');
+    for (const [proveedor, porAduana] of Object.entries(dedicado)) {
+      for (const [aduana, tarifas] of Object.entries(porAduana)) {
+        for (const [tipo, tarifa] of Object.entries(tarifas)) insDed.run(proveedor, aduana, tipo, Number(tarifa));
+      }
+    }
+
+    db.exec('DELETE FROM rutas_consolidado_proveedor');
+    for (const [proveedor, porAduana] of Object.entries(consolidado)) {
+      for (const [aduana, franjas] of Object.entries(porAduana)) {
+        for (const [franja, valor] of Object.entries(franjas)) insCons.run(proveedor, aduana, franja, Number(valor));
+      }
+    }
+
+    db.exec('DELETE FROM ur_tarifa_por_equipos');
+    for (const fila of urPorEquipos) insUr.run(Number(fila.equipos), Number(fila.FTL), Number(fila.RABON));
+
+    registrarDiff({
+      usuario: req.usuario,
+      tabla: 'rutas_dedicado_proveedor',
+      campo: 'tarifa',
+      antes: antesDedicado,
+      despues: despuesDedicado,
+    });
+    registrarDiff({
+      usuario: req.usuario,
+      tabla: 'rutas_consolidado_proveedor',
+      campo: 'valor',
+      antes: antesConsolidado,
+      despues: despuesConsolidado,
+    });
+    registrarDiff({
+      usuario: req.usuario,
+      tabla: 'ur_tarifa_por_equipos',
+      campo: 'tarifa',
+      antes: antesUr,
+      despues: despuesUr,
+    });
+  });
+  guardar();
+  await respaldarAntesDeEscribir();
+  res.json({ ok: true });
+});
+
+// --- Flete Impo: Aduana -> Sucursal ---
+app.put('/api/reglas-negocio/flete-impo', requireSesionEpicor, requireSuperusuario, async (req, res) => {
+  const nuevo = req.body; // { [aduana]: { [destino]: { [tipo]: tarifa } } }
+  if (!nuevo || typeof nuevo !== 'object' || Array.isArray(nuevo)) {
+    return res.status(400).json({ error: 'Se esperaba un objeto { [aduana]: { [destino]: { [tipo]: tarifa } } }.' });
+  }
+
+  for (const [aduana, porDestino] of Object.entries(nuevo)) {
+    for (const [destino, tarifas] of Object.entries(porDestino)) {
+      for (const tipo of Object.keys(tarifas)) {
+        if (!TIPOS_TRANSPORTE_IMPO.includes(tipo)) {
+          return res.status(400).json({
+            error: `Tipo de transporte no reconocido en ${aduana}/${destino}: "${tipo}". Permitidos: ${TIPOS_TRANSPORTE_IMPO.join(', ')}.`,
+          });
+        }
+      }
+    }
+  }
+
+  const antes = Object.fromEntries(
+    db
+      .prepare('SELECT * FROM rutas_impo')
+      .all()
+      .map((f) => [`${f.aduana} → ${f.destino} · ${f.tipo_transporte}`, String(f.tarifa)])
+  );
+  const despues = {};
+  for (const [aduana, porDestino] of Object.entries(nuevo))
+    for (const [destino, tarifas] of Object.entries(porDestino))
+      for (const [tipo, tarifa] of Object.entries(tarifas))
+        despues[`${aduana} → ${destino} · ${tipo}`] = String(Number(tarifa));
+
+  const insertar = db.prepare('INSERT INTO rutas_impo (aduana, destino, tipo_transporte, tarifa) VALUES (?, ?, ?, ?)');
+
+  const guardar = db.transaction(() => {
+    db.exec('DELETE FROM rutas_impo');
+    for (const [aduana, porDestino] of Object.entries(nuevo)) {
+      for (const [destino, tarifas] of Object.entries(porDestino)) {
+        for (const [tipo, tarifa] of Object.entries(tarifas)) insertar.run(aduana, destino, tipo, Number(tarifa));
+      }
+    }
+    registrarDiff({ usuario: req.usuario, tabla: 'rutas_impo', campo: 'tarifa', antes, despues });
+  });
+  guardar();
+  await respaldarAntesDeEscribir();
+  res.json({ ok: true });
+});
+
+// --- Bodega y Recinto: tarifa por aduana según franja de peso ---
+app.put('/api/reglas-negocio/bodega', requireSesionEpicor, requireSuperusuario, async (req, res) => {
+  const nuevo = req.body; // { [aduana]: { min, medio, alto } }
+  if (!nuevo || typeof nuevo !== 'object' || Array.isArray(nuevo)) {
+    return res.status(400).json({ error: 'Se esperaba un objeto { [aduana]: { min, medio, alto } }.' });
+  }
+  for (const [aduana, t] of Object.entries(nuevo)) {
+    if ([t?.min, t?.medio, t?.alto].some((v) => typeof Number(v) !== 'number' || Number.isNaN(Number(v)))) {
+      return res.status(400).json({ error: `Los 3 valores de "${aduana}" (min, medio, alto) deben ser numéricos.` });
+    }
+  }
+
+  const antes = new Map(db.prepare('SELECT * FROM tarifa_bodega_por_aduana').all().map((f) => [f.aduana, f]));
+  const upsert = db.prepare(`
+    INSERT INTO tarifa_bodega_por_aduana (aduana, min, medio, alto)
+    VALUES (@aduana, @min, @medio, @alto)
+    ON CONFLICT(aduana) DO UPDATE SET min = excluded.min, medio = excluded.medio, alto = excluded.alto
+  `);
+
+  const guardar = db.transaction(() => {
+    for (const [aduana, t] of Object.entries(nuevo)) {
+      const fila = { aduana, min: Number(t.min), medio: Number(t.medio), alto: Number(t.alto) };
+      upsert.run(fila);
+      const previa = antes.get(aduana);
+      registrarCambio({
+        usuario: req.usuario,
+        tabla: 'tarifa_bodega_por_aduana',
+        clave: aduana,
+        campo: 'min/medio/alto',
+        valorAnterior: previa ? `${previa.min}/${previa.medio}/${previa.alto}` : null,
+        valorNuevo: `${fila.min}/${fila.medio}/${fila.alto}`,
+      });
+    }
+  });
+  guardar();
+  await respaldarAntesDeEscribir();
+  res.json({ ok: true });
+});
+
 // --- Respaldo: descargar el .db completo ---
 app.get('/api/reglas-negocio/respaldo', requireSesionEpicor, requireSuperusuario, (req, res) => {
   res.download(DB_PATH, `reglasNegocio-${timestampArchivo()}.db`);
